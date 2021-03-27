@@ -24,6 +24,9 @@
 
 #define UPDATE_PERIOD 2000
 
+#define WET_PERIOD 120000
+#define WET_TIME 100
+
 #define MIN_TEMPERATURE 36
 #define MAX_TEMPERATURE 38
 
@@ -97,6 +100,7 @@ int rotateCount = 0;
 
 uint32_t updateTimer = 0;
 uint32_t beginTimer = 0;
+uint32_t wetTimer = 0;
 
 void initButtons();
 void initReedSwitches();
@@ -167,6 +171,7 @@ void setup() {
 
   rotateTimer = millis();
   beginTimer = millis();
+  wetTimer = millis(); 
 }
 
 void loop() {
@@ -225,10 +230,14 @@ void loop() {
     digitalWrite(RelayVentil, OFF);
   }
 
-  if (currentHumidity < neededHumidity - humidityHysteresis) {
-    digitalWrite(RelayWetter, ON);
-  } else {
-    digitalWrite(RelayWetter, OFF);
+  if ((millis() - wetTimer) >= WET_PERIOD) {
+    if (currentHumidity < neededHumidity - humidityHysteresis) {
+      digitalWrite(RelayWetter, ON);
+      if ((millis() - wetTimer) >= WET_PERIOD + WET_TIME) {
+        digitalWrite(RelayWetter, OFF);
+        wetTimer = millis();
+      }
+    }
   }
 
   if (((millis() - updateTimer) >= UPDATE_PERIOD) && mode == Current) {
