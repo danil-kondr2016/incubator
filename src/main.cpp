@@ -28,7 +28,7 @@
 #define MAX_TEMPERATURE 38
 
 #define ALARM_TEMPERATURE 39
-#define DEFAULT_STOP_TEMPERATURE 43
+#define STOP_TEMPERATURE 43
 
 #define MAX_ARGS 4
 #define MAX_CMD_LENGTH 255
@@ -65,7 +65,6 @@ float neededHumidity = 50;
 
 float temperatureHysteresis = DEFAULT_TEMPERATURE_HYSTERESIS;
 float humidityHysteresis = DEFAULT_HUMIDITY_HYSTERESIS;
-float stopTemperature = DEFAULT_STOP_TEMPERATURE;
 
 bool alarm = false;
 bool need_update = false;
