@@ -469,6 +469,9 @@ void handleControls() {
        newProgramNumber = currentProgramNumber;
   }
 
+  if (mode != Current && (plus || minus))
+    hasChanges = true;
+
   if (mode == Temperature) {
     if (currentProgramNumber != handProgram)
       return;
@@ -613,6 +616,10 @@ void serialEvent() {
         Serial.println(buf);
         sprintf_P(buf, long_fmt, uptime, (millis() - beginTimer) / 1000);
         Serial.println(buf);
+        if (hasChanges) {
+          Serial.println(F("changed"));
+          hasChanges = false;
+        }
         if (alarm) {
           Serial.println(f_overheat);
         }
