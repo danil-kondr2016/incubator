@@ -10,6 +10,8 @@
 #include "letters.h"
 #include "automode.h"
 
+#define DIMMER
+
 #define DISPLAY_I2C_ADDRESS 0x3F
 #define REED_SWITCH_DELAY 50
 #define TOUCH_BUTTON_DELAY 100
@@ -19,16 +21,29 @@
 #define ON LOW
 #define OFF HIGH
 
-#define DEFAULT_TEMPERATURE_HYSTERESIS 0.3F
-#define DEFAULT_HUMIDITY_HYSTERESIS 5
+#define TEMPERATURE_HYSTERESIS 0.3F
+#define HUMIDITY_HYSTERESIS 5
 
 #define UPDATE_PERIOD 2000
+#ifdef DIMMER
+#define HEATER_CALIBRATION_DELAY 3000
+#define HEATER_DELAY 1000
+#endif
 
 #define WET_PERIOD 120000
 #define WET_TIME 100
 
 #define MIN_TEMPERATURE 36
 #define MAX_TEMPERATURE 38
+#define DELTA_TEMPERATURE 0.1
+
+#define MIN_HUMIDITY 0
+#define MAX_HUMIDITY 100
+#define DELTA_HUMIDITY 1
+
+#define MIN_ROT_PER_DAY 0
+#define MAX_ROT_PER_DAY 4320
+#define DELTA_ROT_PER_DAY 1
 
 #define ALARM_TEMPERATURE 39
 #define STOP_TEMPERATURE 43
@@ -56,6 +71,9 @@ enum Menu {
   Automatic
 };
 
+#define N_MENU_MODES 5
+#define DELTA_MENU_MODE 1
+
 enum Position {
   M = -1, N, P, PosError, Undefined
 };
@@ -65,9 +83,6 @@ float currentHumidity = 0;
 
 float neededTemperature = 37.5;
 float neededHumidity = 50;
-
-float temperatureHysteresis = DEFAULT_TEMPERATURE_HYSTERESIS;
-float humidityHysteresis = DEFAULT_HUMIDITY_HYSTERESIS;
 
 bool alarm = false;
 bool need_update = false;
@@ -80,6 +95,10 @@ int handProgram = 0;
 int nProgram = 1;
 
 bool needRotate = false;
+bool hasChanges = false;
+#ifdef DIMMER
+bool heat = false;
+#endif
 
 ProgramEntry currentProgram;
 
@@ -101,6 +120,9 @@ int rotateCount = 0;
 uint32_t updateTimer = 0;
 uint32_t beginTimer = 0;
 uint32_t wetTimer = 0;
+#ifdef DIMMER
+uint32_t heaterTimer = 0;
+#endif
 
 void initButtons();
 void initReedSwitches();
@@ -111,6 +133,9 @@ void handleControls();
 Position determinePosition();
 
 void loadProgram(int);
+
+void toggleHeater();
+void toggleWeater();
 
 void setup() {
   Serial.begin(9600);
@@ -126,11 +151,24 @@ void setup() {
   digitalWrite(RelayMotor1, OFF);
   digitalWrite(RelayMotor2, OFF);
   digitalWrite(RelayWetter, OFF);
-  digitalWrite(RelayCooler, ON);
+  digitalWrite(RelayCooler, OFF);
   digitalWrite(RelayHeater, OFF);
   digitalWrite(RelayRing, OFF);
   digitalWrite(RelayVentil, OFF);
   
+  #ifdef DIMMER
+  delay(HEATER_CALIBRATION_DELAY);
+  digitalWrite(RelayHeater, ON);
+  delay(HEATER_CALIBRATION_DELAY);
+  digitalWrite(RelayHeater, OFF);
+
+  digitalWrite(RelayHeater, ON);
+  delay(HEATER_DELAY);
+  digitalWrite(RelayHeater, OFF);
+  #endif
+
+  digitalWrite(RelayCooler, ON);
+
   initButtons();
   initReedSwitches();
 
@@ -209,10 +247,36 @@ void loop() {
     }
   }
 
-  if (currentTemperature < neededTemperature - temperatureHysteresis) {
+  if (currentTemperature < neededTemperature - TEMPERATURE_HYSTERESIS) {
+    #ifndef DIMMER
     digitalWrite(RelayHeater, ON);
+    #else
+    if (!heat) {
+      if (heaterTimer == 0)
+        heaterTimer = millis();
+      digitalWrite(RelayHeater, ON);
+      if ((millis() - heaterTimer) >= HEATER_DELAY) {
+        digitalWrite(RelayHeater, OFF);
+        heaterTimer = 0;
+        heat = true;
+      }
+    }
+    #endif
   } else if (currentTemperature >= neededTemperature) {
+    #ifndef DIMMER
     digitalWrite(RelayHeater, OFF);
+    #else
+    if (heat) {
+      if (heaterTimer == 0)
+        heaterTimer = millis();
+      digitalWrite(RelayHeater, ON);
+      if ((millis() - heaterTimer) >= HEATER_DELAY) {
+        digitalWrite(RelayHeater, OFF);
+        heaterTimer = 0;
+        heat = false;
+      }
+    }
+    #endif
   }
 
   if ((currentTemperature >= ALARM_TEMPERATURE) 
@@ -231,7 +295,7 @@ void loop() {
   }
 
   if ((millis() - wetTimer) >= WET_PERIOD) {
-    if (currentHumidity < neededHumidity - humidityHysteresis) {
+    if (currentHumidity < neededHumidity - HUMIDITY_HYSTERESIS) {
       digitalWrite(RelayWetter, ON);
       if ((millis() - wetTimer) >= WET_PERIOD + WET_TIME) {
         digitalWrite(RelayWetter, OFF);
@@ -410,29 +474,53 @@ void handleControls() {
       return;
 
     if (plus)
-      neededTemperature = constrain(neededTemperature+0.1, MIN_TEMPERATURE, MAX_TEMPERATURE);
+      neededTemperature = constrain(
+        neededTemperature + DELTA_TEMPERATURE,
+        MIN_TEMPERATURE, 
+        MAX_TEMPERATURE
+      );
     else if (minus)
-      neededTemperature = constrain(neededTemperature-0.1, MIN_TEMPERATURE, MAX_TEMPERATURE);
+      neededTemperature = constrain(
+        neededTemperature - DELTA_TEMPERATURE,
+        MIN_TEMPERATURE,
+        MAX_TEMPERATURE
+      );
   } else if (mode == Humidity) {
     if (currentProgramNumber != handProgram)
       return;
 
     if (plus)
-      neededHumidity = constrain(neededHumidity+1, 0, 100);
+      neededHumidity = constrain(
+        neededHumidity + DELTA_HUMIDITY, 
+        MIN_HUMIDITY, 
+        MAX_HUMIDITY
+      );
     else if (minus)
-      neededHumidity = constrain(neededHumidity-1, 0, 100);
+      neededHumidity = constrain(
+        neededHumidity - DELTA_HUMIDITY, 
+        MIN_HUMIDITY, 
+        MAX_HUMIDITY
+      );
   } else if (mode == Rotating) {
     if (currentProgramNumber != handProgram)
       return;
 
     if (plus) {
-      rotationsPerDay = constrain(rotationsPerDay+1, 0, 24);
+      rotationsPerDay = constrain(
+        rotationsPerDay + DELTA_ROT_PER_DAY, 
+        MIN_ROT_PER_DAY, 
+        MAX_ROT_PER_DAY
+      );
       if (rotationsPerDay > 0)
         period = DAY/rotationsPerDay;
       else
         period = NO_PERIOD;
     } else if (minus) {
-      rotationsPerDay = constrain(rotationsPerDay-1, 0, 24);
+      rotationsPerDay = constrain(
+        rotationsPerDay - DELTA_ROT_PER_DAY, 
+        MIN_ROT_PER_DAY, 
+        MAX_ROT_PER_DAY
+      );
       if (rotationsPerDay > 0)
         period = DAY/rotationsPerDay;
       else
@@ -511,7 +599,11 @@ void serialEvent() {
         Serial.println(buf);
         sprintf_P(buf, float_fmt, current_humid, (double)currentHumidity);
         Serial.println(buf);
+        #ifdef DIMMER
         sprintf_P(buf, int_fmt, heater, (digitalRead(RelayHeater) == ON) ? 1 : 0);
+        #else
+        sprintf_P(buf, int_fmt, heater, heat ? 1 : 0);
+        #endif
         Serial.println(buf);
         sprintf_P(buf, int_fmt, cooler, (digitalRead(RelayCooler) == ON) ? 1 : 0);
         Serial.println(buf);
