@@ -10,8 +10,6 @@
 #include "letters.h"
 #include "automode.h"
 
-#define DIMMER
-
 #define DISPLAY_I2C_ADDRESS 0x3F
 #define REED_SWITCH_DELAY 50
 #define TOUCH_BUTTON_DELAY 100
@@ -21,17 +19,14 @@
 #define ON LOW
 #define OFF HIGH
 
-#define TEMPERATURE_HYSTERESIS 0.3F
+#define TEMPERATURE_HYSTERESIS 0.3F 
 #define HUMIDITY_HYSTERESIS 5
 
 #define UPDATE_PERIOD 2000
-#ifdef DIMMER
-#define HEATER_CALIBRATION_DELAY 3000
-#define HEATER_DELAY 1000
-#endif
+#define ROTATION_PERIOD 3000
 
 #define WET_PERIOD 120000
-#define WET_TIME 100
+#define WET_TIME 200
 
 #define MIN_TEMPERATURE 36
 #define MAX_TEMPERATURE 38
@@ -47,6 +42,7 @@
 
 #define ALARM_TEMPERATURE 39
 #define STOP_TEMPERATURE 43
+
 
 #define MAX_ARGS 4
 #define MAX_CMD_LENGTH 255
@@ -96,9 +92,6 @@ int nProgram = 1;
 
 bool needRotate = false;
 bool hasChanges = false;
-#ifdef DIMMER
-bool heat = false;
-#endif
 
 ProgramEntry currentProgram;
 
@@ -120,9 +113,6 @@ int rotateCount = 0;
 uint32_t updateTimer = 0;
 uint32_t beginTimer = 0;
 uint32_t wetTimer = 0;
-#ifdef DIMMER
-uint32_t heaterTimer = 0;
-#endif
 
 void initButtons();
 void initReedSwitches();
@@ -151,24 +141,11 @@ void setup() {
   digitalWrite(RelayMotor1, OFF);
   digitalWrite(RelayMotor2, OFF);
   digitalWrite(RelayWetter, OFF);
-  digitalWrite(RelayCooler, OFF);
+  digitalWrite(RelayCooler, ON);
   digitalWrite(RelayHeater, OFF);
   digitalWrite(RelayRing, OFF);
   digitalWrite(RelayVentil, OFF);
   
-  #ifdef DIMMER
-  delay(HEATER_CALIBRATION_DELAY);
-  digitalWrite(RelayHeater, ON);
-  delay(HEATER_CALIBRATION_DELAY);
-  digitalWrite(RelayHeater, OFF);
-
-  digitalWrite(RelayHeater, ON);
-  delay(HEATER_DELAY);
-  digitalWrite(RelayHeater, OFF);
-  #endif
-
-  digitalWrite(RelayCooler, ON);
-
   initButtons();
   initReedSwitches();
 
@@ -248,35 +225,9 @@ void loop() {
   }
 
   if (currentTemperature < neededTemperature - TEMPERATURE_HYSTERESIS) {
-    #ifndef DIMMER
     digitalWrite(RelayHeater, ON);
-    #else
-    if (!heat) {
-      if (heaterTimer == 0)
-        heaterTimer = millis();
-      digitalWrite(RelayHeater, ON);
-      if ((millis() - heaterTimer) >= HEATER_DELAY) {
-        digitalWrite(RelayHeater, OFF);
-        heaterTimer = 0;
-        heat = true;
-      }
-    }
-    #endif
   } else if (currentTemperature >= neededTemperature) {
-    #ifndef DIMMER
     digitalWrite(RelayHeater, OFF);
-    #else
-    if (heat) {
-      if (heaterTimer == 0)
-        heaterTimer = millis();
-      digitalWrite(RelayHeater, ON);
-      if ((millis() - heaterTimer) >= HEATER_DELAY) {
-        digitalWrite(RelayHeater, OFF);
-        heaterTimer = 0;
-        heat = false;
-      }
-    }
-    #endif
   }
 
   if ((currentTemperature >= ALARM_TEMPERATURE) 
@@ -325,17 +276,24 @@ void loop() {
     if (pos != N) {
       rotateTo = N;
       needRotate = true;
+      rotateTimer = millis();
 
       if (pos == P) {
         digitalWrite(RelayMotor1, OFF);
         digitalWrite(RelayMotor2, ON);
-        if (determinePosition() == rotateTo)
+        if (determinePosition() == rotateTo 
+            || (millis() - rotateTimer) >= period + ROTATION_PERIOD)
+        {
           digitalWrite(RelayMotor2, OFF);
+        }
       } else if (pos == M) {
         digitalWrite(RelayMotor1, ON);
         digitalWrite(RelayMotor2, OFF);
-        if (determinePosition() == rotateTo)
+        if (determinePosition() == rotateTo 
+            || (millis() - rotateTimer) >= period + ROTATION_PERIOD)
+        {
           digitalWrite(RelayMotor1, OFF);
+        }
       }
     }
 
@@ -349,7 +307,9 @@ void loop() {
       digitalWrite(RelayMotor1, OFF);
       digitalWrite(RelayMotor2, ON);
     }
-    if (determinePosition() == rotateTo) {
+    if (determinePosition() == rotateTo 
+        || (millis() - rotateTimer) >= period + ROTATION_PERIOD)
+    {
         digitalWrite(RelayMotor1, OFF);
         digitalWrite(RelayMotor2, OFF);
         rotateTo = Undefined;
@@ -412,6 +372,14 @@ void printScreen() {
       else if (pos == PosError)
         display.print("E");
       
+      display.setCursor(14, 1);
+      if (rotateTo == M)
+        display.print("-");
+      else if (rotateTo == P)
+        display.print("+");
+      else if (rotateTo == N)
+        display.print("0");
+
       break;
     }
     case Temperature: {
@@ -602,11 +570,7 @@ void serialEvent() {
         Serial.println(buf);
         sprintf_P(buf, float_fmt, current_humid, (double)currentHumidity);
         Serial.println(buf);
-        #ifdef DIMMER
         sprintf_P(buf, int_fmt, heater, (digitalRead(RelayHeater) == ON) ? 1 : 0);
-        #else
-        sprintf_P(buf, int_fmt, heater, heat ? 1 : 0);
-        #endif
         Serial.println(buf);
         sprintf_P(buf, int_fmt, cooler, (digitalRead(RelayCooler) == ON) ? 1 : 0);
         Serial.println(buf);
