@@ -92,6 +92,7 @@ int nProgram = 1;
 
 bool needRotate = false;
 bool hasChanges = false;
+bool wetting = false;
 
 ProgramEntry currentProgram;
 
@@ -248,6 +249,7 @@ void loop() {
   if ((millis() - wetTimer) >= WET_PERIOD) {
     if (currentHumidity < neededHumidity - HUMIDITY_HYSTERESIS) {
       digitalWrite(RelayWetter, ON);
+      wetting = true;
       if ((millis() - wetTimer) >= WET_PERIOD + WET_TIME) {
         digitalWrite(RelayWetter, OFF);
         wetTimer = millis();
@@ -574,7 +576,7 @@ void serialEvent() {
         Serial.println(buf);
         sprintf_P(buf, int_fmt, cooler, (digitalRead(RelayCooler) == ON) ? 1 : 0);
         Serial.println(buf);
-        sprintf_P(buf, int_fmt, wetter, (digitalRead(RelayWetter) == ON) ? 1 : 0);
+        sprintf_P(buf, int_fmt, wetter, (wetting) ? 1 : 0);
         Serial.println(buf);
         sprintf_P(buf, int_fmt, chamber, (int)pos);
         Serial.println(buf);
@@ -584,6 +586,8 @@ void serialEvent() {
           Serial.println(F("changed"));
           hasChanges = false;
         }
+        if (wetting)
+          wetting = false;
         if (alarm) {
           Serial.println(f_overheat);
         }
