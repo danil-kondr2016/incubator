@@ -64,7 +64,8 @@ enum Menu {
   Temperature,
   Humidity,
   Rotating,
-  Automatic
+  Automatic,
+  ManualRotation
 };
 
 #define N_MENU_MODES 5
@@ -160,17 +161,13 @@ void setup() {
   display.init();
   display.backlight();
 
-  display.createChar(1, rus_m);
-  display.createChar(2, rus_t);
-  display.createChar(3, rus_l);
-  display.createChar(4, rus_zh);
-  display.createChar(5, rus_n);
-  display.createChar(6, rus_myagk_mal);
-  display.createChar(7, rus_v);
+  display.createChar(1, rus_zh);
+  display.createChar(2, rus_ch);
   
   current_bank = 0;
 
   pos = determinePosition();
+  rotateTo = pos;
 
   {
     ProgramEntry *prog_index;
@@ -302,10 +299,10 @@ void loop() {
   }
 
   if (needRotate) {
-    if (rotateTo == P) {
+    if ((int)rotateTo > (int)determinePosition()) {
       digitalWrite(RelayMotor1, ON);
       digitalWrite(RelayMotor2, OFF);
-    } else if (rotateTo == M) {
+    } else if ((int)rotateTo < (int)determinePosition()) {
       digitalWrite(RelayMotor1, OFF);
       digitalWrite(RelayMotor2, ON);
     }
@@ -344,6 +341,7 @@ void initReedSwitches() {
   posp45.interval(REED_SWITCH_DELAY);
 }
 
+// Vsö! Objavläjem latinizacyju!
 void printScreen() {
   char buf[20];
 
@@ -354,12 +352,12 @@ void printScreen() {
     case Current: {
       sprintf(buf, "%2.1f\xDF   ", currentTemperature);
       display.setCursor(0, 0);
-      display.print("  Te\1n ");
+      display.print("  Temp ");
       display.print(buf);
 
       sprintf(buf, "%3d%%   ", (int)currentHumidity);
       display.setCursor(0, 1);
-      display.print("  B\3a\4 ");
+      display.print("  Vla\1 ");
       display.print(buf);
 
       display.setCursor(14, 0);
@@ -387,7 +385,7 @@ void printScreen() {
     case Temperature: {
       sprintf(buf, "%2.1f\xDF", neededTemperature);
       display.setCursor(0, 0);
-      display.print("Te\1nepa\2ypa");
+      display.print("Temperatura");
       display.setCursor(0, 1);
       display.print(buf);
       break;
@@ -395,7 +393,7 @@ void printScreen() {
     case Humidity: {
       sprintf(buf, "%3d%%", (int)neededHumidity);
       display.setCursor(0, 0);
-      display.print("B\3a\4\5oc\2\6");
+      display.print("Vla\1nostj");
 
       display.setCursor(0, 1);
       display.print(buf);
@@ -403,7 +401,7 @@ void printScreen() {
     }
     case Rotating: {
       display.setCursor(0, 0);
-      display.print("Ko\3-\7o no\7opo\2o\7");
+      display.print("Kol-vo povorotov");
 
       display.setCursor(0, 1);
       display.print(rotationsPerDay);
@@ -411,11 +409,30 @@ void printScreen() {
     }
     case Automatic: {
       display.setCursor(0, 0);
-      display.print("Pe\4u\1");
+      display.print("Re\1ym");
       display.setCursor(0, 1);
       display.print("P");
       display.print(newProgramNumber);
       break;
+    }
+    case ManualRotation: {
+      display.setCursor(0, 0);
+      display.print("Ru\2noj povorot");
+      display.setCursor(0, 1);
+      display.print("jajic");
+      display.setCursor(15, 0);
+      if (pos == M)
+        display.print("-");
+      else if (pos == N)
+        display.print("0");
+      else if (pos == P)
+        display.print("+");
+      else if (pos == Undefined)
+        display.print("?");
+      else if (pos == PosError)
+        display.print("E");
+
+
     }
   }
 
@@ -434,7 +451,7 @@ void handleControls() {
     display.clear();
     if (mode == Automatic)
       loadProgram(newProgramNumber);
-    mode = (Menu)(((int)mode + 1) % 5);
+    mode = (Menu)(((int)mode + 1) % 6);
     if (mode == Automatic)
        newProgramNumber = currentProgramNumber;
   }
@@ -504,6 +521,32 @@ void handleControls() {
       newProgramNumber = constrain(newProgramNumber+1, 0, nProgram-1);
     else if (minus)
       newProgramNumber = constrain(newProgramNumber-1, 0, nProgram-1);
+  } else if (mode == ManualRotation) {
+    if (plusBtn.rose()) {
+      digitalWrite(RelayMotor1, ON);
+      digitalWrite(RelayMotor2, OFF);
+    } else if (minusBtn.rose()) {
+      digitalWrite(RelayMotor1, OFF);
+      digitalWrite(RelayMotor2, ON);
+    }
+    if (plusBtn.fell() || minusBtn.fell()) {
+      digitalWrite(RelayMotor1, OFF);
+      digitalWrite(RelayMotor2, OFF);
+    }
+    if (plusBtn.read() || minusBtn.read()) {
+      display.setCursor(15, 0);
+      if (pos == M)
+        display.print("-");
+      else if (pos == N)
+        display.print("0");
+      else if (pos == P)
+        display.print("+");
+      else if (pos == Undefined)
+        display.print("?");
+      else if (pos == PosError)
+        display.print("E");
+
+    }
   }
 }
 
@@ -631,6 +674,26 @@ void serialEvent() {
         beginTimer = millis();
         Serial.println(f_success);
       } 
+      else if (strcmp_P(argv[0], rotate_to) == 0) {
+        needRotate = true; 
+        rotateTo = (Position)(atoi(argv[1]));
+        Serial.println(f_success);
+      }
+      else if (strcmp_P(argv[0], rotate_left) == 0) {
+        digitalWrite(RelayMotor1, OFF);
+        digitalWrite(RelayMotor2, ON);
+        Serial.println(f_success);
+      }
+      else if (strcmp_P(argv[0], rotate_right) == 0) {
+        digitalWrite(RelayMotor1, ON);
+        digitalWrite(RelayMotor2, OFF);
+        Serial.println(f_success);
+      }
+      else if (strcmp_P(argv[0], rotate_off) == 0) {
+        digitalWrite(RelayMotor1, OFF);
+        digitalWrite(RelayMotor2, OFF);
+        Serial.println(f_success);
+      }
       else {
         Serial.println(F("connected"));
       }

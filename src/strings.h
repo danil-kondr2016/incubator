@@ -23,6 +23,11 @@ const char cooler[] PROGMEM = "cooler";
 const char wetter[] PROGMEM = "wetter";
 const char chamber[] PROGMEM = "chamber";
 
+const char rotate_to[] PROGMEM = "rotate_to";
+const char rotate_left[] PROGMEM = "rotate_left";
+const char rotate_right[] PROGMEM = "rotate_right";
+const char rotate_off[] PROGMEM = "rotate_off";
+
 #define f_success F("success")
 #define f_overheat F("overheat")
 #define f_error F("error")
