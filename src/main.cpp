@@ -23,10 +23,10 @@
 #define HUMIDITY_HYSTERESIS 5
 
 #define UPDATE_PERIOD 2000
-#define ROTATION_PERIOD 3000
+#define ROTATION_PERIOD 2000
 
 #define WET_PERIOD 120000
-#define WET_TIME 200
+#define WET_TIME 300
 
 #define MIN_TEMPERATURE 36
 #define MAX_TEMPERATURE 38
@@ -65,10 +65,11 @@ enum Menu {
   Humidity,
   Rotating,
   Automatic,
-  ManualRotation
+  ManualRotation,
+  ManualWetting
 };
 
-#define N_MENU_MODES 5
+#define N_MENU_MODES 7
 #define DELTA_MENU_MODE 1
 
 enum Position {
@@ -182,6 +183,32 @@ void setup() {
     currentProgramNumber = handProgram;
   }
 
+  {
+    uint32_t posTimer = millis();
+    pos = determinePosition();
+    display.setCursor(0, 0);
+    display.print("Korrektirovka");
+    display.setCursor(0, 1);
+    display.print("polo\1enija");
+  
+    if (pos == M) {
+      digitalWrite(RelayMotor1, ON);
+      digitalWrite(RelayMotor2, OFF);
+      rotateTo = P;
+    } else {
+      digitalWrite(RelayMotor1, OFF);
+      digitalWrite(RelayMotor2, ON); 
+      rotateTo = M;
+    }
+
+    while ((millis() - posTimer) <= ROTATION_PERIOD) {
+      if (determinePosition() == rotateTo)
+        break;
+    }
+    digitalWrite(RelayMotor1, OFF);
+    digitalWrite(RelayMotor2, OFF);
+  }
+
   rotateTimer = millis();
   beginTimer = millis();
   wetTimer = millis(); 
@@ -266,7 +293,7 @@ void loop() {
     if (pos == M || pos == N) {
       rotateTo = P;
       needRotate = true;
-    } else if (pos == P) {
+    } else if (pos == P || pos == Undefined) {
       rotateTo = M;
       needRotate = true;
     }
@@ -299,10 +326,10 @@ void loop() {
   }
 
   if (needRotate) {
-    if ((int)rotateTo > (int)determinePosition()) {
+    if (rotateTo == P) {
       digitalWrite(RelayMotor1, ON);
       digitalWrite(RelayMotor2, OFF);
-    } else if ((int)rotateTo < (int)determinePosition()) {
+    } else if (rotateTo == M) {
       digitalWrite(RelayMotor1, OFF);
       digitalWrite(RelayMotor2, ON);
     }
@@ -341,7 +368,7 @@ void initReedSwitches() {
   posp45.interval(REED_SWITCH_DELAY);
 }
 
-// Vsö! Objavläjem latinizacyju!
+// Vsö! Objavləjem latinizacyju!
 void printScreen() {
   char buf[20];
 
@@ -391,7 +418,7 @@ void printScreen() {
       break;
     }
     case Humidity: {
-      sprintf(buf, "%3d%%", (int)neededHumidity);
+      sprintf(buf, "%d%%   ", (int)neededHumidity);
       display.setCursor(0, 0);
       display.print("Vla\1nostj");
 
@@ -431,8 +458,16 @@ void printScreen() {
         display.print("?");
       else if (pos == PosError)
         display.print("E");
+      break;
+    }
+    case ManualWetting: {
+      sprintf(buf, "%d%%   ", (int)currentHumidity);
+      display.setCursor(0, 0);
+      display.print("Ru\2. uvl. (+)");
 
-
+      display.setCursor(0, 1);
+      display.print(buf);
+      break;
     }
   }
 
@@ -443,6 +478,7 @@ void handleControls() {
   bool menu = menuBtn.rose();
   bool plus = plusBtn.rose();
   bool minus = minusBtn.rose();
+  char buf[20] = {0};
 
   if (menu || plus || minus)
     need_update = true;
@@ -451,9 +487,11 @@ void handleControls() {
     display.clear();
     if (mode == Automatic)
       loadProgram(newProgramNumber);
-    mode = (Menu)(((int)mode + 1) % 6);
+    mode = (Menu)(((int)mode + DELTA_MENU_MODE) % N_MENU_MODES);
     if (mode == Automatic)
        newProgramNumber = currentProgramNumber;
+    digitalWrite(RelayMotor1, OFF);
+    digitalWrite(RelayMotor2, OFF);
   }
 
   if (mode != Current && (plus || minus))
@@ -547,6 +585,17 @@ void handleControls() {
         display.print("E");
 
     }
+  } else if (mode == ManualWetting) {
+    if (plusBtn.rose()) {
+      digitalWrite(RelayWetter, ON);
+    } else if (plusBtn.fell()) {
+      digitalWrite(RelayWetter, OFF);
+    }
+    if (plusBtn.rose() || plusBtn.fell()) {
+      sprintf(buf, "%d%%   ", (int)currentHumidity);
+      display.setCursor(0, 1);
+      display.print(buf);
+    }
   }
 }
 
@@ -555,8 +604,9 @@ Position determinePosition() {
   bool n00 = posn00.read();
   bool p45 = !posp45.read();
 
-  if (!m45 && !n00 && !p45)
+  if (!m45 && !n00 && !p45) {
     return Undefined;
+  }
 
   if (m45 && !(n00 || p45)) {
     return M;
@@ -623,7 +673,8 @@ void serialEvent() {
         Serial.println(buf);
         sprintf_P(buf, int_fmt, chamber, (int)pos);
         Serial.println(buf);
-        sprintf_P(buf, long_fmt, uptime, (millis() - beginTimer) / 1000);
+        sprintf_P(buf, long_fmt, uptime, 
+          (millis() - beginTimer) / 1000);
         Serial.println(buf);
         if (hasChanges) {
           Serial.println(F("changed"));
@@ -675,6 +726,7 @@ void serialEvent() {
         Serial.println(f_success);
       } 
       else if (strcmp_P(argv[0], rotate_to) == 0) {
+        rotateTimer = millis() + period;
         needRotate = true; 
         rotateTo = (Position)(atoi(argv[1]));
         Serial.println(f_success);
@@ -692,6 +744,19 @@ void serialEvent() {
       else if (strcmp_P(argv[0], rotate_off) == 0) {
         digitalWrite(RelayMotor1, OFF);
         digitalWrite(RelayMotor2, OFF);
+        Serial.println(f_success);
+      }
+      else if (strcmp_P(argv[0], set_uptime) == 0) {
+        uint32_t newUptime = atol(argv[1]) * 1000;
+        uint32_t beginShift = newUptime - millis() + beginTimer;
+        beginTimer -= beginShift;
+        rotateTimer = beginTimer - beginShift;
+        
+        Serial.println(f_success);
+      }
+      else if (strcmp_P(argv[0], set_menu) == 0) {
+        mode = (Menu)atoi(argv[1]); 
+        need_update = true;
         Serial.println(f_success);
       }
       else {

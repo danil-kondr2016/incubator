@@ -28,6 +28,9 @@ const char rotate_left[] PROGMEM = "rotate_left";
 const char rotate_right[] PROGMEM = "rotate_right";
 const char rotate_off[] PROGMEM = "rotate_off";
 
+const char set_uptime[] PROGMEM = "set_uptime";
+const char set_menu[] PROGMEM = "set_menu";
+
 #define f_success F("success")
 #define f_overheat F("overheat")
 #define f_error F("error")
