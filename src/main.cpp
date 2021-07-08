@@ -133,7 +133,7 @@ void toggleHeater();
 void toggleWeater();
 
 void setup() {
-  Serial.begin(9600);
+  Serial.begin(19200);
 
   pinMode(RelayMotor1, OUTPUT);
   pinMode(RelayMotor2, OUTPUT);
