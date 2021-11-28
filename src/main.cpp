@@ -172,18 +172,9 @@ void setup() {
   pos = determinePosition();
   rotateTo = pos;
 
-  {
-    ProgramEntry *prog_index;
-    memcpy_PF(
-      (void*)prog_index,
-      (uint_farptr_t)programIndex,
-      sizeof(programIndex)
-    );
-
-    nProgram = prog_index[0].length;
-    handProgram = 0;
-    currentProgramNumber = handProgram;
-  }
+  nProgram = programIndex[0].length;
+  handProgram = 0;
+  currentProgramNumber = handProgram;
 
   {
     uint32_t posTimer = millis();
@@ -628,14 +619,11 @@ Position determinePosition() {
 }
 
 void loadProgram(int n_program) {
-  ProgramEntry new_entry;
-  memcpy_PF(&new_entry, (uint_farptr_t)&programIndex[n_program + 1], sizeof(ProgramEntry));
-
   currentProgramNumber = n_program;
-  currentProgram.type = new_entry.type;
-  currentProgram.length = new_entry.length;
+  currentProgram.type = programIndex[n_program + 1].type;
+  currentProgram.length = programIndex[n_program + 1].length;
   for (int i = 0; i < MAX_PROGRAM_LEN; i++)
-    currentProgram.program[i] = new_entry.program[i];
+    currentProgram.program[i] = programIndex[n_program + 1].program[i];
 }
 
 void serialEvent() {
