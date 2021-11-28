@@ -3,7 +3,7 @@
 
 #include <Arduino.h>
 
-const char rus_ch[8] PROGMEM = {
+const char rus_ch[8] = {
   0b00100,
   0b00000,
   0b01110,
@@ -12,9 +12,9 @@ const char rus_ch[8] PROGMEM = {
   0b10001,
   0b01110,
   0b00000
-}; // ч
+}; // ċ
 
-const char rus_zh[8] PROGMEM = {
+const char rus_zh[8] = {
   0b00100,
   0b00000,
   0b11111,
@@ -23,6 +23,6 @@ const char rus_zh[8] PROGMEM = {
   0b01000,
   0b11111,
   0b00000
-}; // ж
+}; // ż
 
 #endif

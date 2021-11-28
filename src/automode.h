@@ -23,7 +23,7 @@ typedef struct {
     ProgramRecord program[MAX_PROGRAM_LEN];
 } ProgramEntry;
 
-const ProgramEntry programIndex[] PROGMEM = {
+const ProgramEntry programIndex[] = {
     {TYPE_LEN, 2,  {}},
     {TYPE_HAND, 0, {}},
     {TYPE_AUTO, 3, {

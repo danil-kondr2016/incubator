@@ -103,7 +103,7 @@ Menu mode = Current;
 Position pos;
 Position rotateTo;
 
-char cmd[MAX_CMD_LENGTH+1];
+char cmd_str[MAX_CMD_LENGTH+1];
 uint8_t cmd_len = 0;
 
 char argv[MAX_ARGS][MAX_ARG_LENGTH+1];
@@ -649,15 +649,15 @@ void serialEvent() {
       if (inc == '\r')
         continue;
       if (inc == '\b' || inc == '\x7f') {
-        cmd[cmd_len--] = '\0';
+        cmd_str[cmd_len--] = '\0';
       } else {
-        cmd[cmd_len++] = inc;
+        cmd_str[cmd_len++] = inc;
       }
     } else {
-      cmd[cmd_len] = '\0';
+      cmd_str[cmd_len] = '\0';
       for (int i = 0; i <= cmd_len; i++) {
-        if (arg_len < MAX_ARG_LENGTH && cmd[i] > ' ') {
-          argv[argc][arg_len++] = cmd[i];
+        if (arg_len < MAX_ARG_LENGTH && cmd_str[i] > ' ') {
+          argv[argc][arg_len++] = cmd_str[i];
         } else {
           argv[argc][arg_len] = '\0';
           
@@ -668,20 +668,20 @@ void serialEvent() {
           break;
       }
 
-      if (strcmp_P(argv[0], request_state) == 0) {
-        sprintf_P(buf, float_fmt, current_temp, (double)currentTemperature);
+      if (strcmp(argv[0], request_state) == 0) {
+        sprintf(buf, float_fmt, current_temp, (double)currentTemperature);
         Serial.println(buf);
-        sprintf_P(buf, float_fmt, current_humid, (double)currentHumidity);
+        sprintf(buf, float_fmt, current_humid, (double)currentHumidity);
         Serial.println(buf);
-        sprintf_P(buf, int_fmt, heater, (digitalRead(RelayHeater) == ON) ? 1 : 0);
+        sprintf(buf, int_fmt, heater, (digitalRead(RelayHeater) == ON) ? 1 : 0);
         Serial.println(buf);
-        sprintf_P(buf, int_fmt, cooler, (digitalRead(RelayCooler) == ON) ? 1 : 0);
+        sprintf(buf, int_fmt, cooler, (digitalRead(RelayCooler) == ON) ? 1 : 0);
         Serial.println(buf);
-        sprintf_P(buf, int_fmt, wetter, (wetting) ? 1 : 0);
+        sprintf(buf, int_fmt, wetter, (wetting) ? 1 : 0);
         Serial.println(buf);
-        sprintf_P(buf, int_fmt, chamber, (int)pos);
+        sprintf(buf, int_fmt, chamber, (int)pos);
         Serial.println(buf);
-        sprintf_P(buf, long_fmt, uptime, 
+        sprintf(buf, long_fmt, uptime, 
           (millis() - beginTimer) / 1000);
         Serial.println(buf);
         if (hasChanges) {
@@ -694,33 +694,33 @@ void serialEvent() {
           Serial.println(f_overheat);
         }
       } 
-      else if (strcmp_P(argv[0], request_config) == 0) {
-        sprintf_P(buf, float_fmt, needed_temp, (double)neededTemperature);
+      else if (strcmp(argv[0], request_config) == 0) {
+        sprintf(buf, float_fmt, needed_temp, (double)neededTemperature);
         Serial.println(buf);
-        sprintf_P(buf, float_fmt, needed_humid, (double)neededHumidity);
+        sprintf(buf, float_fmt, needed_humid, (double)neededHumidity);
         Serial.println(buf);
-        sprintf_P(buf, int_fmt, rotations_per_day, rotationsPerDay);
+        sprintf(buf, int_fmt, rotations_per_day, rotationsPerDay);
         Serial.println(buf);
-        sprintf_P(buf, int_fmt, number_of_programs, nProgram);
+        sprintf(buf, int_fmt, number_of_programs, nProgram);
         Serial.println(buf);
-        sprintf_P(buf, int_fmt, current_program, currentProgramNumber);
+        sprintf(buf, int_fmt, current_program, currentProgramNumber);
         Serial.println(buf);
       }
-      else if (strcmp_P(argv[0], needed_temp) == 0) {
+      else if (strcmp(argv[0], needed_temp) == 0) {
         if (currentProgram.type == TYPE_AUTO) {
           return;
         }
         neededTemperature = atof(argv[1]);
         Serial.println(f_success);
       } 
-      else if (strcmp_P(argv[0], needed_humid) == 0) {
+      else if (strcmp(argv[0], needed_humid) == 0) {
         if (currentProgram.type == TYPE_AUTO) {
           return;
         }
         neededHumidity = atof(argv[1]);
         Serial.println(f_success);
       }
-      else if (strcmp_P(argv[0], rotations_per_day) == 0) {
+      else if (strcmp(argv[0], rotations_per_day) == 0) {
         if (currentProgram.type == TYPE_AUTO) {
           return;
         }
@@ -728,33 +728,33 @@ void serialEvent() {
         period = DAY / rotationsPerDay;
         Serial.println(f_success);
       } 
-      else if (strcmp_P(argv[0], switch_to_program) == 0) {
+      else if (strcmp(argv[0], switch_to_program) == 0) {
         loadProgram(atoi(argv[1]));
         beginTimer = millis();
         Serial.println(f_success);
       } 
-      else if (strcmp_P(argv[0], rotate_to) == 0) {
+      else if (strcmp(argv[0], rotate_to) == 0) {
         rotateTimer = millis() + period;
         needRotate = true; 
         rotateTo = (Position)(atoi(argv[1]));
         Serial.println(f_success);
       }
-      else if (strcmp_P(argv[0], rotate_left) == 0) {
+      else if (strcmp(argv[0], rotate_left) == 0) {
         digitalWrite(RelayMotor1, OFF);
         digitalWrite(RelayMotor2, ON);
         Serial.println(f_success);
       }
-      else if (strcmp_P(argv[0], rotate_right) == 0) {
+      else if (strcmp(argv[0], rotate_right) == 0) {
         digitalWrite(RelayMotor1, ON);
         digitalWrite(RelayMotor2, OFF);
         Serial.println(f_success);
       }
-      else if (strcmp_P(argv[0], rotate_off) == 0) {
+      else if (strcmp(argv[0], rotate_off) == 0) {
         digitalWrite(RelayMotor1, OFF);
         digitalWrite(RelayMotor2, OFF);
         Serial.println(f_success);
       }
-      else if (strcmp_P(argv[0], set_uptime) == 0) {
+      else if (strcmp(argv[0], set_uptime) == 0) {
         uint32_t newUptime = atol(argv[1]) * 1000;
         uint32_t beginShift = newUptime - millis() + beginTimer;
         beginTimer -= beginShift;
@@ -762,7 +762,7 @@ void serialEvent() {
         
         Serial.println(f_success);
       }
-      else if (strcmp_P(argv[0], set_menu) == 0) {
+      else if (strcmp(argv[0], set_menu) == 0) {
         mode = (Menu)atoi(argv[1]); 
         need_update = true;
         menuSwitchTimer = millis();
@@ -774,7 +774,7 @@ void serialEvent() {
       }
 
       for (int i = 0; i < cmd_len; i++)
-        cmd[i] = '\0';
+        cmd_str[i] = '\0';
       cmd_len = 0;
 
       for (int i = 0; i < argc; i++) {
