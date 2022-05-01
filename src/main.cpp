@@ -66,10 +66,9 @@ enum Menu {
   Rotating,
   Automatic,
   ManualRotation,
-  ManualWetting
+  N_MENU_MODES
 };
 
-#define N_MENU_MODES 7
 #define DELTA_MENU_MODE 1
 
 enum Position {
@@ -274,7 +273,7 @@ void loop() {
   }
 
   if (((millis() - updateTimer) >= UPDATE_PERIOD)
-      && (mode == Current || mode == ManualWetting || mode == ManualRotation)) {
+      && (mode == Current || mode == ManualRotation)) {
     need_update = true;
     updateTimer = millis();
   }
@@ -453,15 +452,6 @@ void printScreen() {
         display.print("E");
       break;
     }
-    case ManualWetting: {
-      sprintf(buf, "%d%%   ", (int)currentHumidity);
-      display.setCursor(0, 0);
-      display.print("Ru\2. uvl. (+)");
-
-      display.setCursor(0, 1);
-      display.print(buf);
-      break;
-    }
   }
 
   need_update = false;
@@ -587,12 +577,6 @@ void handleControls() {
       else if (pos == PosError)
         display.print("E");
 
-    }
-  } else if (mode == ManualWetting) {
-    if (plusBtn.rose()) {
-      digitalWrite(RelayWetter, ON);
-    } else if (plusBtn.fell()) {
-      digitalWrite(RelayWetter, OFF);
     }
   }
 }
