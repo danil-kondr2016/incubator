@@ -4,6 +4,7 @@
 #include <OneWire.h>
 #include <DallasTemperature.h>
 #include <LiquidCrystal_I2C.h>
+#include <SPI.h>
 #include <WiFiNINA.h>
 
 #include "pins.h"
@@ -38,6 +39,11 @@ enum Position {
   M = -1, N, P, PosError, Undefined
 };
 
+enum HTTPMethod {
+  METHOD_GET = 1,
+  METHOD_POST
+};
+
 float currentTemperature = 0;
 float currentHumidity = 0;
 
@@ -64,14 +70,6 @@ Menu mode = Current;
 Position pos;
 Position rotateTo;
 
-char cmd_str[MAX_CMD_LENGTH+1];
-uint8_t cmd_len = 0;
-
-char argv[MAX_ARGS][MAX_ARG_LENGTH+1];
-uint8_t arg_len = 0;
-uint8_t argc = 0;
-uint8_t current_bank = 0;
-
 uint32_t rotateTimer = 0;
 int rotateCount = 0;
 
@@ -88,6 +86,8 @@ void putPosition();
 void putRotateTo();
 void printScreen();
 void handleControls();
+
+String processCommand(String);
 void handleRequest();
 
 Position determinePosition();
@@ -110,8 +110,6 @@ void rotateOff() {
 }
 
 void setup() {
-  Serial.begin(19200);
-
   pinMode(RelayMotorP, OUTPUT);
   pinMode(RelayMotorM, OUTPUT);
   pinMode(RelayWetter, OUTPUT);
@@ -144,8 +142,6 @@ void setup() {
   display.createChar(1, rus_zh);
   display.createChar(2, rus_ch);
   
-  current_bank = 0;
-
   pos = determinePosition();
   rotateTo = pos;
 
@@ -336,7 +332,6 @@ void initReedSwitches() {
 
 void initWiFi() {
   WiFi.beginAP("Incubator");
-
   http.begin();
 }
 
@@ -543,13 +538,184 @@ void handleControls() {
   }
 }
 
-void handleRequest() {
-  WiFiClient client = server.available();
-  char request_str[1024]; // TODO define MAX_REQUEST_STR 1024
+String processCommand(String cmd) {
+  char buf[512] = {0};
+  String args[MAX_ARGS];
+  String answer;
 
-  if (client) {
-    
-    client.stop();
+  int n_arg = 0;
+  for (int i = 0; i < cmd.length(); i++) {
+    if (n_arg >= MAX_ARGS)
+      break;
+
+    if (cmd.charAt(i) == ' ')
+      n_arg++;
+    else
+      args[n_arg] += cmd.charAt(i);
+  }
+
+  if (args[0].equals("request_state")) {
+    sprintf(buf, 
+      "current_temp %.2f\r\n"
+      "current_humid %.2f\r\n"
+      "heater %d\r\n"
+      "cooler %d\r\n"
+      "wetter %d\r\n"
+      "chamber %d\r\n"
+      "uptime %lld\r\n",
+      (double)currentTemperature,
+      (double)currentHumidity,
+      (digitalRead(RelayHeater) == ON) ? 1 : 0,
+      (digitalRead(RelayCooler) == ON) ? 1 : 0,
+      (wetting) ? 1 : 0,
+      (int)pos,
+      (millis() - beginTimer) / 1000);
+    answer += buf;
+    if (hasChanges) {
+      answer += "changed\r\n";
+      hasChanges = false;
+    }
+    if (wetting)
+      wetting = false;
+    if (alarm)
+      answer += "overheat\r\n";
+  } else if (args[0].equals("request_config")) {
+    sprintf(buf,
+      "needed_temp %.2f\r\n"
+      "needed_humid %.2f\r\n"
+      "rotation_per_day %d\r\n"
+      "number_of_programs %d\r\n"
+      "current_program %d\r\n",
+      (double)neededTemperature,
+      (double)neededHumidity,
+      rotationsPerDay,
+      nProgram,
+      currentProgramNumber);
+    answer += buf;
+  } else if (args[0].equals("needed_temp")) {
+    if (currentProgram.type == TYPE_AUTO)
+      return String("automatic\r\n");
+    neededTemperature = args[1].toFloat();
+    answer += "success\r\n";
+  } else if (args[0].equals("needed_humid")) {
+    if (currentProgram.type == TYPE_AUTO)
+      return String("automatic\r\n");
+    neededHumidity = args[1].toFloat();
+    answer += "success\r\n";
+  } else if (args[0].equals("rotations_per_day")) {
+    if (currentProgram.type == TYPE_AUTO)
+      return String("automatic\r\n");
+    rotationsPerDay = args[1].toInt();
+    period = DAY / rotationsPerDay;
+    answer += "success\r\n";
+  } else if (args[0].equals("rotate_to")) {
+    rotateTimer = millis() + period;
+    needRotate = true;
+    rotateTo = (Position)(args[1].toInt());
+    answer += "success\r\n";
+  } else if (args[0].equals("rotate_left")) {
+    rotateLeft();
+    answer += "success\r\n";
+  } else if (args[0].equals("rotate_right")) {
+    rotateRight();
+    answer += "success\r\n";
+  } else if (args[0].equals("rotate_off")) {
+    rotateOff();
+    answer += "success\r\n";
+  }
+
+  return answer;
+}
+
+void handleRequest() {
+  WiFiClient client = http.available();
+  String request_str;
+  String address;
+  String answer;
+
+  int inc = 0;
+  int method = 0;
+  int n_string = 0;
+  bool receiving_commands = false;
+
+  if (!client)
+    return;
+
+  while (client.connected()) {
+    if (client.available()) {
+      inc = client.read();
+      if (inc != '\r' || inc != '\n') {
+        request_str += inc;
+      } else {
+        if (receiving_commands) {
+          answer += processCommand(request_str);
+        }
+
+        if (n_string == 0) {
+          int first = 0;
+
+          if (request_str.startsWith("GET ")) {
+            method = METHOD_GET;
+            first = 4;
+          } else if (request_str.startsWith("POST ")) {
+            method = METHOD_POST;
+            first = 5;
+          }
+
+          for (int i = first; i < request_str.length(); i++) {
+            if (request_str.charAt(i) != ' ')
+              address += request_str.charAt(i);
+            else
+              break;
+          }
+        }
+
+        if (request_str == "") {
+          if (method == METHOD_GET) {
+            if (address == "/control") {
+              client.println("HTTP/1.1 200 OK");
+              client.println("Content-Type: text/plain");
+              client.println("Content-Length: 12");
+              client.println();
+              client.println("method_get");
+              client.stop();
+            } else {
+              client.println("HTTP/1.1 404 Not Found");
+              client.println("Content-Type: text/plain");
+              client.println("Content-Length: 22");
+              client.println();
+              client.println("Error: 404 Not Found");
+              client.stop();
+            }
+          } else if (method == METHOD_POST) {
+            if (address == "/control") {
+              client.println("HTTP/1.1 200 OK");
+              client.println("Content-Type: text/plain");
+              receiving_commands = true;
+            } else {
+              client.println("HTTP/1.1 404 Not Found");
+              client.println("Content-Type: text/plain");
+              client.println("Content-Length: 22");
+              client.println();
+              client.println("Error: 404 Not Found");
+              client.stop();
+            }
+          }
+        }
+
+        request_str = "";
+        n_string++;
+      }
+    } else {
+      if (receiving_commands) {
+        if (request_str != "")
+          answer += processCommand(request_str);
+        client.println("Content-Length: " + (answer.length() + 2));
+        client.println();
+        client.println(answer);
+        client.stop();
+      }
+    }
   }
 }
 
