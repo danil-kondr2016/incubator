@@ -8,8 +8,8 @@ const int DSPin = 11;
 
 /* Relays */
 
-const int RelayMotor1   = 3;
-const int RelayMotor2   = 4;
+const int RelayMotorP   = 3;
+const int RelayMotorM   = 4;
 const int RelayWetter   = 5;
 const int RelayCooler   = 6;
 const int RelayHeater   = 7;

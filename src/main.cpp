@@ -4,51 +4,12 @@
 #include <OneWire.h>
 #include <DallasTemperature.h>
 #include <LiquidCrystal_I2C.h>
+#include <WiFiNINA.h>
 
 #include "pins.h"
 #include "letters.h"
 #include "automode.h"
-
-#define DISPLAY_I2C_ADDRESS 0x3F
-#define REED_SWITCH_DELAY 50
-#define TOUCH_BUTTON_DELAY 100
-
-#define DAY 86400000L
-
-#define ON LOW
-#define OFF HIGH
-
-#define TEMPERATURE_HYSTERESIS 0.3F 
-#define HUMIDITY_HYSTERESIS 5
-
-#define UPDATE_PERIOD 2000
-#define ROTATION_PERIOD 2000
-
-#define WET_PERIOD 120000L
-#define WET_TIME 300
-
-#define MENU_SWITCH_PERIOD 300000L
-
-#define MIN_TEMPERATURE 36
-#define MAX_TEMPERATURE 38
-#define DELTA_TEMPERATURE 0.1
-
-#define MIN_HUMIDITY 0
-#define MAX_HUMIDITY 100
-#define DELTA_HUMIDITY 1
-
-#define MIN_ROT_PER_DAY 0
-#define MAX_ROT_PER_DAY 4320
-#define DELTA_ROT_PER_DAY 1
-
-#define ALARM_TEMPERATURE 39
-#define STOP_TEMPERATURE 43
-
-#define MAX_ARGS 4
-#define MAX_CMD_LENGTH 255
-#define MAX_ARG_LENGTH 31
-
-#define NO_PERIOD 0xFFFFFFFFUL
+#include "constants.h"
 
 Bounce menuBtn, plusBtn, minusBtn;
 Bounce posm45, posn00, posp45;
@@ -58,6 +19,8 @@ DallasTemperature thermoSensor(&onewire);
 LiquidCrystal_I2C display(DISPLAY_I2C_ADDRESS, 16, 2);
 
 DeviceAddress address;
+
+WiFiServer http(80);
 
 enum Menu {
   Current = 0,
@@ -119,30 +82,46 @@ uint32_t menuSwitchTimer = 0;
 
 void initButtons();
 void initReedSwitches();
+void initWiFi();
 
+void putPosition();
+void putRotateTo();
 void printScreen();
 void handleControls();
+void handleRequest();
 
 Position determinePosition();
 
 void loadProgram(int);
 
-void toggleHeater();
-void toggleWeater();
+void rotateLeft() {
+  digitalWrite(RelayMotorP, OFF);
+  digitalWrite(RelayMotorM, ON);
+}
+
+void rotateRight() {
+  digitalWrite(RelayMotorP, ON);
+  digitalWrite(RelayMotorM, OFF);
+}
+
+void rotateOff() {
+  digitalWrite(RelayMotorP, OFF);
+  digitalWrite(RelayMotorM, OFF);
+}
 
 void setup() {
   Serial.begin(19200);
 
-  pinMode(RelayMotor1, OUTPUT);
-  pinMode(RelayMotor2, OUTPUT);
+  pinMode(RelayMotorP, OUTPUT);
+  pinMode(RelayMotorM, OUTPUT);
   pinMode(RelayWetter, OUTPUT);
   pinMode(RelayCooler, OUTPUT);
   pinMode(RelayHeater, OUTPUT);
   pinMode(RelayRing, OUTPUT);
   pinMode(RelayVentil, OUTPUT);
 
-  digitalWrite(RelayMotor1, OFF);
-  digitalWrite(RelayMotor2, OFF);
+  digitalWrite(RelayMotorP, OFF);
+  digitalWrite(RelayMotorM, OFF);
   digitalWrite(RelayWetter, OFF);
   digitalWrite(RelayCooler, ON);
   digitalWrite(RelayHeater, OFF);
@@ -183,12 +162,10 @@ void setup() {
     display.print("polo\1enija");
   
     if (pos == M) {
-      digitalWrite(RelayMotor1, ON);
-      digitalWrite(RelayMotor2, OFF);
+      rotateRight();
       rotateTo = P;
     } else {
-      digitalWrite(RelayMotor1, OFF);
-      digitalWrite(RelayMotor2, ON); 
+      rotateLeft();
       rotateTo = M;
     }
 
@@ -196,9 +173,10 @@ void setup() {
       if (determinePosition() == rotateTo)
         break;
     }
-    digitalWrite(RelayMotor1, OFF);
-    digitalWrite(RelayMotor2, OFF);
+    rotateOff();
   }
+
+  initWiFi();
 
   rotateTimer = millis();
   beginTimer = millis();
@@ -297,20 +275,18 @@ void loop() {
       rotateTimer = millis();
 
       if (pos == P) {
-        digitalWrite(RelayMotor1, OFF);
-        digitalWrite(RelayMotor2, ON);
+        rotateLeft();
         if (determinePosition() == rotateTo 
             || (millis() - rotateTimer) >= period + ROTATION_PERIOD)
         {
-          digitalWrite(RelayMotor2, OFF);
+          rotateOff();
         }
       } else if (pos == M) {
-        digitalWrite(RelayMotor1, ON);
-        digitalWrite(RelayMotor2, OFF);
+        rotateRight();
         if (determinePosition() == rotateTo 
             || (millis() - rotateTimer) >= period + ROTATION_PERIOD)
         {
-          digitalWrite(RelayMotor1, OFF);
+          rotateOff();
         }
       }
     }
@@ -319,23 +295,21 @@ void loop() {
 
   if (needRotate) {
     if (rotateTo == P) {
-      digitalWrite(RelayMotor1, ON);
-      digitalWrite(RelayMotor2, OFF);
+      rotateRight();
     } else if (rotateTo == M) {
-      digitalWrite(RelayMotor1, OFF);
-      digitalWrite(RelayMotor2, ON);
+      rotateLeft();
     }
     if (determinePosition() == rotateTo 
         || (millis() - rotateTimer) >= period + ROTATION_PERIOD)
     {
-        digitalWrite(RelayMotor1, OFF);
-        digitalWrite(RelayMotor2, OFF);
+        rotateOff();
         rotateTo = Undefined;
         rotateTimer = millis();
         needRotate = false;
       }
   }
   
+  handleRequest();
 }
 
 void initButtons() {
@@ -360,6 +334,36 @@ void initReedSwitches() {
   posp45.interval(REED_SWITCH_DELAY);
 }
 
+void initWiFi() {
+  WiFi.beginAP("Incubator");
+
+  http.begin();
+}
+
+void putPosition() {
+  display.setCursor(15, 0);
+  if (pos == M)
+    display.print("-");
+  else if (pos == N)
+    display.print("0");
+  else if (pos == P)
+    display.print("+");
+  else if (pos == Undefined)
+    display.print("?");
+  else if (pos == PosError)
+    display.print("E");
+}
+
+void putRotateTo() {
+  display.setCursor(15, 1);
+  if (rotateTo == M)
+    display.print("-");
+  else if (rotateTo == P)
+    display.print("+");
+  else if (rotateTo == N)
+    display.print("0");
+}
+
 // Vsö! Objavläjem latinizacyju!
 void printScreen() {
   char buf[20];
@@ -379,26 +383,9 @@ void printScreen() {
       display.print("  Vla\1 ");
       display.print(buf);
 
-      display.setCursor(14, 0);
-      if (pos == M)
-        display.print("-");
-      else if (pos == N)
-        display.print("0");
-      else if (pos == P)
-        display.print("+");
-      else if (pos == Undefined)
-        display.print("?");
-      else if (pos == PosError)
-        display.print("E");
-      
-      display.setCursor(14, 1);
-      if (rotateTo == M)
-        display.print("-");
-      else if (rotateTo == P)
-        display.print("+");
-      else if (rotateTo == N)
-        display.print("0");
-
+      putPosition();
+      putRotateTo();
+     
       break;
     }
     case Temperature: {
@@ -439,17 +426,7 @@ void printScreen() {
       display.print("Ru\2noj povorot");
       display.setCursor(0, 1);
       display.print("jajic");
-      display.setCursor(15, 0);
-      if (pos == M)
-        display.print("-");
-      else if (pos == N)
-        display.print("0");
-      else if (pos == P)
-        display.print("+");
-      else if (pos == Undefined)
-        display.print("?");
-      else if (pos == PosError)
-        display.print("E");
+      putPosition(); 
       break;
     }
   }
@@ -478,13 +455,12 @@ void handleControls() {
     display.clear();
     if (mode == Automatic)
       loadProgram(newProgramNumber);
-    mode = (Menu)(((int)mode + DELTA_MENU_MODE) % N_MENU_MODES);
+    mode = (Menu)(((int)mode + 1) % N_MENU_MODES);
     if (mode == Automatic)
       newProgramNumber = currentProgramNumber;
     else if (mode == Current)
       menuSwitchTimer = 0;
-    digitalWrite(RelayMotor1, OFF);
-    digitalWrite(RelayMotor2, OFF);
+    rotateOff();
   }
 
   if (mode != Current && (plus || minus))
@@ -554,30 +530,26 @@ void handleControls() {
       newProgramNumber = constrain(newProgramNumber-1, 0, nProgram-1);
   } else if (mode == ManualRotation) {
     if (plusBtn.rose()) {
-      digitalWrite(RelayMotor1, ON);
-      digitalWrite(RelayMotor2, OFF);
+      rotateRight();
     } else if (minusBtn.rose()) {
-      digitalWrite(RelayMotor1, OFF);
-      digitalWrite(RelayMotor2, ON);
+      rotateLeft();
     }
     if (plusBtn.fell() || minusBtn.fell()) {
-      digitalWrite(RelayMotor1, OFF);
-      digitalWrite(RelayMotor2, OFF);
+      rotateOff();
     }
     if (plusBtn.read() || minusBtn.read()) {
-      display.setCursor(15, 0);
-      if (pos == M)
-        display.print("-");
-      else if (pos == N)
-        display.print("0");
-      else if (pos == P)
-        display.print("+");
-      else if (pos == Undefined)
-        display.print("?");
-      else if (pos == PosError)
-        display.print("E");
-
+      putPosition();
     }
+  }
+}
+
+void handleRequest() {
+  WiFiClient client = server.available();
+  char request_str[1024]; // TODO define MAX_REQUEST_STR 1024
+
+  if (client) {
+    
+    client.stop();
   }
 }
 
