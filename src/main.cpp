@@ -1,9 +1,13 @@
 #include <Arduino.h>
 #include <Bounce2.h>
 #include <DHT.h>
-#include <OneWire.h>
-#include <DallasTemperature.h>
+
+#include <OneWireNg_CurrentPlatform.h>
+#include <drivers/DSTherm.h>
+#include <utils/Placeholder.h>
+
 #include <LiquidCrystal_I2C.h>
+
 #include <SPI.h>
 #include <WiFiNINA.h>
 
@@ -15,11 +19,10 @@
 Bounce menuBtn, plusBtn, minusBtn;
 Bounce posm45, posn00, posp45;
 DHT humiditySensor(DHTPin, DHT22);
-OneWire onewire(DSPin);
-DallasTemperature thermoSensor(&onewire);
 LiquidCrystal_I2C display(DISPLAY_I2C_ADDRESS, 16, 2);
 
-DeviceAddress address;
+Placeholder<OneWireNg_CurrentPlatform> onewire;
+OneWireNg::Id address;
 
 WiFiServer http(80);
 
@@ -64,6 +67,8 @@ bool needRotate = false;
 bool hasChanges = false;
 bool wetting = false;
 
+bool thermoSensorConnected = false;
+
 ProgramEntry currentProgram;
 
 Menu mode = Current;
@@ -77,9 +82,11 @@ uint32_t updateTimer = 0;
 uint32_t beginTimer = 0;
 uint32_t wetTimer = 0;
 uint32_t menuSwitchTimer = 0;
+uint32_t thermoSensorTimer = 0;
 
 void initButtons();
 void initReedSwitches();
+void initSensors();
 void initWiFi();
 
 void putPosition();
@@ -109,6 +116,35 @@ void rotateOff() {
   digitalWrite(RelayMotorM, OFF);
 }
 
+void updateCurrentTemperature() {
+  Placeholder<DSTherm::Scratchpad> sp_place;
+  DSTherm::Scratchpad * sp;
+  DSTherm thermoSensor(onewire);
+
+  if (!thermoSensorConnected) {
+    currentTemperature = -127;
+    return;
+  }
+
+  if (!thermoSensorTimer)
+    return;
+
+  thermoSensor.convertTemp(address, DSTherm::SCAN_BUS, false);
+  thermoSensorTimer = millis();
+
+  if ((thermoSensorTimer - millis()) >= CONVERSION_TIME) {
+    thermoSensor.readScratchpad(address, &sp_place);
+    sp = &sp_place;
+    currentTemperature = (sp->getTemp()) / 1000.0F;
+
+    thermoSensorTimer = 0;
+  }
+}
+
+void updateCurrentHumidity() {
+  currentHumidity = humiditySensor.readHumidity();
+}
+
 void setup() {
   pinMode(RelayMotorP, OUTPUT);
   pinMode(RelayMotorM, OUTPUT);
@@ -125,16 +161,10 @@ void setup() {
   digitalWrite(RelayHeater, OFF);
   digitalWrite(RelayRing, OFF);
   digitalWrite(RelayVentil, OFF);
-  
+
   initButtons();
   initReedSwitches();
-
-  humiditySensor.begin();
-
-  thermoSensor.begin();
-  thermoSensor.getAddress(address, 0);
-  thermoSensor.setResolution(12);
-  thermoSensor.setWaitForConversion(false);
+  initSensors(); 
 
   display.init();
   display.backlight();
@@ -190,10 +220,8 @@ void loop() {
 
   pos = determinePosition();
 
-  thermoSensor.requestTemperatures();
-
-  currentTemperature = thermoSensor.getTempC(address);
-  currentHumidity = humiditySensor.readHumidity();
+  updateCurrentTemperature();
+  updateCurrentHumidity();
 
   for (int i = 0; i < currentProgram.length; i++) {
     if (currentProgram.type != TYPE_AUTO)
@@ -328,6 +356,27 @@ void initReedSwitches() {
 
   posp45.attach(PositionP45, INPUT);
   posp45.interval(REED_SWITCH_DELAY);
+}
+
+void initSensors() {
+  OneWireNg::ErrorCode error; 
+
+  new (&onewire) OneWireNg_CurrentPlatform(DSPin, false);
+
+  DSTherm thermoSensor(onewire);
+  
+  thermoSensor.writeScratchpadAll(0, 0, DSTherm::RES_X_BIT);
+
+  (&onewire)->searchReset();
+  error = (&onewire)->search(address);
+
+  if (error != OneWireNg::EC_SUCCESS) {
+    thermoSensorConnected = false;
+  } else {
+    thermoSensorConnected = true;
+  }
+
+  humiditySensor.begin();
 }
 
 void initWiFi() {

@@ -42,4 +42,28 @@
 
 #define NO_PERIOD 0xFFFFFFFFUL
 
+/* DS18B20 */
+
+enum MilliSeconds {
+  MS_9_BIT  = 94,
+  MS_10_BIT = 188,
+  MS_11_BIT = 375,
+  MS_12_BIT = 750 
+};
+
+
+#define BIT_RESOLUTION  12
+#define VALUE(x) x
+
+#define xstr(x) str(x)
+#define str(x) x
+
+#define CONCAT_3(a,b,c) a##b##c
+
+#define __BIT(x, br) CONCAT_3(x, br, _BIT)
+#define _BIT(x, br) __BIT(x, br)
+
+#define RES_X_BIT _BIT(RES_, BIT_RESOLUTION)
+#define CONVERSION_TIME _BIT(MS_, BIT_RESOLUTION)
+
 #endif
