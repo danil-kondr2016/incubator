@@ -562,7 +562,7 @@ String processCommand(String cmd) {
       "cooler %d\r\n"
       "wetter %d\r\n"
       "chamber %d\r\n"
-      "uptime %lld\r\n",
+      "uptime %ld\r\n",
       (double)currentTemperature,
       (double)currentHumidity,
       (digitalRead(RelayHeater) == ON) ? 1 : 0,
@@ -644,9 +644,11 @@ void handleRequest() {
   while (client.connected()) {
     if (client.available()) {
       inc = client.read();
-      if (inc != '\r' || inc != '\n') {
-        request_str += inc;
+      if (inc != '\r' && inc != '\n') {
+        request_str += (char)inc;
       } else {
+        if (inc == '\r')
+          continue;
         if (receiving_commands) {
           answer += processCommand(request_str);
         }
