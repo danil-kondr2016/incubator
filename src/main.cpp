@@ -9,47 +9,7 @@
 #include "strings.h"
 #include "letters.h"
 #include "automode.h"
-
-#define DISPLAY_I2C_ADDRESS 0x3F
-#define REED_SWITCH_DELAY 50
-#define TOUCH_BUTTON_DELAY 100
-
-#define DAY 86400000L
-
-#define ON LOW
-#define OFF HIGH
-
-#define TEMPERATURE_HYSTERESIS 0.3F 
-#define HUMIDITY_HYSTERESIS 5
-
-#define UPDATE_PERIOD 2000
-#define ROTATION_PERIOD 2000
-
-#define WET_PERIOD 120000L
-#define WET_TIME 300
-
-#define MENU_SWITCH_PERIOD 300000L
-
-#define MIN_TEMPERATURE 36
-#define MAX_TEMPERATURE 38
-#define DELTA_TEMPERATURE 0.1
-
-#define MIN_HUMIDITY 0
-#define MAX_HUMIDITY 100
-#define DELTA_HUMIDITY 1
-
-#define MIN_ROT_PER_DAY 0
-#define MAX_ROT_PER_DAY 4320
-#define DELTA_ROT_PER_DAY 1
-
-#define ALARM_TEMPERATURE 39
-#define STOP_TEMPERATURE 43
-
-#define MAX_ARGS 4
-#define MAX_CMD_LENGTH 255
-#define MAX_ARG_LENGTH 31
-
-#define NO_PERIOD 0xFFFFFFFFUL
+#include "constants.h"
 
 Bounce menuBtn, plusBtn, minusBtn;
 Bounce posm45, posn00, posp45;
@@ -67,10 +27,10 @@ enum Menu {
   Rotating,
   Automatic,
   ManualRotation,
-  ManualWetting
+  ManualWetting,
+  N_MENU_MODES
 };
 
-#define N_MENU_MODES 7
 #define DELTA_MENU_MODE 1
 
 enum Position {
