@@ -109,7 +109,6 @@ uint8_t cmd_len = 0;
 char argv[MAX_ARGS][MAX_ARG_LENGTH+1];
 uint8_t arg_len = 0;
 uint8_t argc = 0;
-uint8_t current_bank = 0;
 
 uint32_t rotateTimer = 0;
 int rotateCount = 0;
@@ -121,7 +120,10 @@ uint32_t menuSwitchTimer = 0;
 
 void initButtons();
 void initReedSwitches();
+void initSensors();
 
+void putPosition();
+void putRotateTo();
 void printScreen();
 void handleControls();
 
@@ -129,8 +131,20 @@ Position determinePosition();
 
 void loadProgram(int);
 
-void toggleHeater();
-void toggleWeater();
+void rotateLeft() {
+  digitalWrite(RelayMotor1, OFF);
+  digitalWrite(RelayMotor2, ON);
+}
+
+void rotateRight() {
+  digitalWrite(RelayMotor1, ON);
+  digitalWrite(RelayMotor2, OFF);
+}
+
+void rotateOff() {
+  digitalWrite(RelayMotor1, OFF);
+  digitalWrite(RelayMotor2, OFF);
+}
 
 void setup() {
   Serial.begin(19200);
@@ -153,13 +167,7 @@ void setup() {
   
   initButtons();
   initReedSwitches();
-
-  humiditySensor.begin();
-
-  thermoSensor.begin();
-  thermoSensor.getAddress(address, 0);
-  thermoSensor.setResolution(12);
-  thermoSensor.setWaitForConversion(false);
+  initSensors();
 
   display.init();
   display.backlight();
@@ -167,8 +175,6 @@ void setup() {
   display.createChar(1, rus_zh);
   display.createChar(2, rus_ch);
   
-  current_bank = 0;
-
   pos = determinePosition();
   rotateTo = pos;
 
@@ -194,12 +200,10 @@ void setup() {
     display.print("polo\1enija");
   
     if (pos == M) {
-      digitalWrite(RelayMotor1, ON);
-      digitalWrite(RelayMotor2, OFF);
+      rotateRight();
       rotateTo = P;
     } else {
-      digitalWrite(RelayMotor1, OFF);
-      digitalWrite(RelayMotor2, ON); 
+      rotateLeft();
       rotateTo = M;
     }
 
@@ -207,8 +211,7 @@ void setup() {
       if (determinePosition() == rotateTo)
         break;
     }
-    digitalWrite(RelayMotor1, OFF);
-    digitalWrite(RelayMotor2, OFF);
+    rotateOff();
   }
 
   rotateTimer = millis();
@@ -313,7 +316,7 @@ void loop() {
         if (determinePosition() == rotateTo 
             || (millis() - rotateTimer) >= period + ROTATION_PERIOD)
         {
-          digitalWrite(RelayMotor2, OFF);
+          rotateOff();
         }
       } else if (pos == M) {
         digitalWrite(RelayMotor1, ON);
@@ -321,7 +324,7 @@ void loop() {
         if (determinePosition() == rotateTo 
             || (millis() - rotateTimer) >= period + ROTATION_PERIOD)
         {
-          digitalWrite(RelayMotor1, OFF);
+          rotateOff();
         }
       }
     }
@@ -330,17 +333,14 @@ void loop() {
 
   if (needRotate) {
     if (rotateTo == P) {
-      digitalWrite(RelayMotor1, ON);
-      digitalWrite(RelayMotor2, OFF);
+      rotateRight();
     } else if (rotateTo == M) {
-      digitalWrite(RelayMotor1, OFF);
-      digitalWrite(RelayMotor2, ON);
+      rotateLeft();
     }
     if (determinePosition() == rotateTo 
         || (millis() - rotateTimer) >= period + ROTATION_PERIOD)
     {
-        digitalWrite(RelayMotor1, OFF);
-        digitalWrite(RelayMotor2, OFF);
+        rotateOff();
         rotateTo = Undefined;
         rotateTimer = millis();
         needRotate = false;
@@ -371,6 +371,39 @@ void initReedSwitches() {
   posp45.interval(REED_SWITCH_DELAY);
 }
 
+void initSensors() {
+  humiditySensor.begin();
+
+  thermoSensor.begin();
+  thermoSensor.getAddress(address, 0);
+  thermoSensor.setResolution(12);
+  thermoSensor.setWaitForConversion(false);
+}
+
+void putPosition() {
+  display.setCursor(15, 0);
+  if (pos == M)
+    display.print("-");
+  else if (pos == N)
+    display.print("0");
+  else if (pos == P)
+    display.print("+");
+  else if (pos == Undefined)
+    display.print("?");
+  else if (pos == PosError)
+    display.print("E");
+}
+
+void putRotateTo() {
+  display.setCursor(14, 1);
+  if (rotateTo == M)
+    display.print("-");
+  else if (rotateTo == P)
+    display.print("+");
+  else if (rotateTo == N)
+    display.print("0");
+}
+
 // Vsö! Objavläjem latinizacyju!
 void printScreen() {
   char buf[20];
@@ -390,25 +423,8 @@ void printScreen() {
       display.print("  Vla\1 ");
       display.print(buf);
 
-      display.setCursor(14, 0);
-      if (pos == M)
-        display.print("-");
-      else if (pos == N)
-        display.print("0");
-      else if (pos == P)
-        display.print("+");
-      else if (pos == Undefined)
-        display.print("?");
-      else if (pos == PosError)
-        display.print("E");
-      
-      display.setCursor(14, 1);
-      if (rotateTo == M)
-        display.print("-");
-      else if (rotateTo == P)
-        display.print("+");
-      else if (rotateTo == N)
-        display.print("0");
+      putPosition();
+      putRotateTo();     
 
       break;
     }
@@ -450,17 +466,7 @@ void printScreen() {
       display.print("Ru\2noj povorot");
       display.setCursor(0, 1);
       display.print("jajic");
-      display.setCursor(15, 0);
-      if (pos == M)
-        display.print("-");
-      else if (pos == N)
-        display.print("0");
-      else if (pos == P)
-        display.print("+");
-      else if (pos == Undefined)
-        display.print("?");
-      else if (pos == PosError)
-        display.print("E");
+      putRotateTo();
       break;
     }
     case ManualWetting: {
@@ -503,8 +509,7 @@ void handleControls() {
       newProgramNumber = currentProgramNumber;
     else if (mode == Current)
       menuSwitchTimer = 0;
-    digitalWrite(RelayMotor1, OFF);
-    digitalWrite(RelayMotor2, OFF);
+    rotateOff();
   }
 
   if (mode != Current && (plus || minus))
@@ -574,29 +579,15 @@ void handleControls() {
       newProgramNumber = constrain(newProgramNumber-1, 0, nProgram-1);
   } else if (mode == ManualRotation) {
     if (plusBtn.rose()) {
-      digitalWrite(RelayMotor1, ON);
-      digitalWrite(RelayMotor2, OFF);
+      rotateRight();
     } else if (minusBtn.rose()) {
-      digitalWrite(RelayMotor1, OFF);
-      digitalWrite(RelayMotor2, ON);
+      rotateLeft();
     }
     if (plusBtn.fell() || minusBtn.fell()) {
-      digitalWrite(RelayMotor1, OFF);
-      digitalWrite(RelayMotor2, OFF);
+      rotateOff();
     }
     if (plusBtn.read() || minusBtn.read()) {
-      display.setCursor(15, 0);
-      if (pos == M)
-        display.print("-");
-      else if (pos == N)
-        display.print("0");
-      else if (pos == P)
-        display.print("+");
-      else if (pos == Undefined)
-        display.print("?");
-      else if (pos == PosError)
-        display.print("E");
-
+      putPosition();
     }
   } else if (mode == ManualWetting) {
     if (plusBtn.rose()) {
@@ -740,18 +731,15 @@ void serialEvent() {
         Serial.println(f_success);
       }
       else if (strcmp_P(argv[0], rotate_left) == 0) {
-        digitalWrite(RelayMotor1, OFF);
-        digitalWrite(RelayMotor2, ON);
+        rotateLeft();
         Serial.println(f_success);
       }
       else if (strcmp_P(argv[0], rotate_right) == 0) {
-        digitalWrite(RelayMotor1, ON);
-        digitalWrite(RelayMotor2, OFF);
+        rotateRight();
         Serial.println(f_success);
       }
       else if (strcmp_P(argv[0], rotate_off) == 0) {
-        digitalWrite(RelayMotor1, OFF);
-        digitalWrite(RelayMotor2, OFF);
+        rotateOff();
         Serial.println(f_success);
       }
       else if (strcmp_P(argv[0], set_uptime) == 0) {
