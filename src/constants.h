@@ -44,6 +44,8 @@
 
 /* DS18B20 */
 
+#define TEMP_ERROR -127
+
 enum MilliSeconds {
   MS_9_BIT  = 94,
   MS_10_BIT = 188,

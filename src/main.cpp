@@ -15,6 +15,7 @@
 #include "letters.h"
 #include "automode.h"
 #include "constants.h"
+#include "pages.h"
 
 Bounce menuBtn, plusBtn, minusBtn;
 Bounce posm45, posn00, posp45;
@@ -44,7 +45,8 @@ enum Position {
 
 enum HTTPMethod {
   METHOD_GET = 1,
-  METHOD_POST
+  METHOD_POST,
+  INCORRECT_METHOD = 255
 };
 
 float currentTemperature = 0;
@@ -122,7 +124,7 @@ void updateCurrentTemperature() {
   DSTherm thermoSensor(onewire);
 
   if (!thermoSensorConnected) {
-    currentTemperature = -127;
+    currentTemperature = TEMP_ERROR;
     return;
   }
 
@@ -249,7 +251,7 @@ void loop() {
   }
 
   if ((currentTemperature >= ALARM_TEMPERATURE) 
-   || (isnan(currentTemperature))) {
+   || (isnan(currentTemperature)) || (currentTemperature == TEMP_ERROR)) {
     digitalWrite(RelayRing, ON);
     alarm = true;
   } else {
@@ -332,7 +334,9 @@ void loop() {
         needRotate = false;
       }
   }
-  
+
+  printInfo();
+
   handleRequest();
 }
 
@@ -703,54 +707,44 @@ void handleRequest() {
         }
 
         if (n_string == 0) {
-          int first = 0;
+          int n_division = 0;
+          String division;
 
-          if (request_str.startsWith("GET ")) {
-            method = METHOD_GET;
-            first = 4;
-          } else if (request_str.startsWith("POST ")) {
-            method = METHOD_POST;
-            first = 5;
-          }
+          for (size_t i = 0; i < request_str.length(); i++) {
+            if (request_str.charAt(i) == ' ') {
+              if (n_division == 0) {
+                if (division == "GET")
+                  method = METHOD_GET;
+                else if (division == "POST")
+                  method = METHOD_POST;
+                else
+                  method = INCORRECT_METHOD;
+              } else if (n_division == 1) {
+                address = division;
+              }
 
-          for (int i = first; i < request_str.length(); i++) {
-            if (request_str.charAt(i) != ' ')
-              address += request_str.charAt(i);
-            else
-              break;
+              division = "";
+              n_division++;
+            } else {
+              division += request_str.charAt(i);
+            }
           }
         }
 
-        if (request_str == "") {
-          if (method == METHOD_GET) {
-            if (address == "/control") {
-              client.println("HTTP/1.1 200 OK");
-              client.println("Content-Type: text/plain");
-              client.println("Content-Length: 12");
-              client.println();
-              client.println("method_get");
+        if (request_str == "" && !receiving_commands) {
+          if (address == "/control") {
+            if (method == METHOD_GET) {
+              sendPage(client, HTTP_200_OK, "text/plain", "method_get");
               client.stop();
-            } else {
-              client.println("HTTP/1.1 404 Not Found");
-              client.println("Content-Type: text/plain");
-              client.println("Content-Length: 22");
-              client.println();
-              client.println("Error: 404 Not Found");
-              client.stop();
-            }
-          } else if (method == METHOD_POST) {
-            if (address == "/control") {
-              client.println("HTTP/1.1 200 OK");
-              client.println("Content-Type: text/plain");
+            } else if (method == METHOD_POST) {
               receiving_commands = true;
-            } else {
-              client.println("HTTP/1.1 404 Not Found");
-              client.println("Content-Type: text/plain");
-              client.println("Content-Length: 22");
-              client.println();
-              client.println("Error: 404 Not Found");
-              client.stop();
-            }
+            } 
+          } else if (address == "/" || address == "/index.html") {
+            sendPage(client, HTTP_200_OK, "text/html", msgWelcome);
+            client.stop();
+          } else {
+            sendPage(client, HTTP_404_NOT_FOUND, "text/html", msg404);
+            client.stop();
           }
         }
 
@@ -761,9 +755,7 @@ void handleRequest() {
       if (receiving_commands) {
         if (request_str != "")
           answer += processCommand(request_str);
-        client.println("Content-Length: " + (answer.length() + 2));
-        client.println();
-        client.println(answer);
+        sendPage(client, HTTP_200_OK, "text/plain", answer.c_str());
         client.stop();
       }
     }
