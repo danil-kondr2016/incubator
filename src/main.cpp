@@ -335,8 +335,6 @@ void loop() {
       }
   }
 
-  printInfo();
-
   handleRequest();
 }
 
